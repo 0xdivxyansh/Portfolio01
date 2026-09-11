@@ -1,9 +1,14 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import emailjs from '@emailjs/browser'
 import { motion } from 'framer-motion'
 import SectionHeading from './SectionHeading'
 import Reveal from './Reveal'
 import { site } from '../data/site'
 import { EASE } from '../utils/motion'
+
+const EMAILJS_SERVICE_ID = 'service_9ed3jls'
+const EMAILJS_TEMPLATE_ID = 'template_349ndmd'
+const EMAILJS_PUBLIC_KEY = 'pSi3z8U5GzmNAh0kT'
 
 const CHANNELS = [
   { label: 'Email', value: site.email, href: site.mailto },
@@ -18,11 +23,15 @@ interface Errors {
   message?: string
 }
 
+type Status = 'idle' | 'sending' | 'success' | 'error'
+
 function ContactForm() {
+  const form = useRef<HTMLFormElement>(null)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState('')
   const [errors, setErrors] = useState<Errors>({})
+  const [status, setStatus] = useState<Status>('idle')
 
   const validate = (): Errors => {
     const errs: Errors = {}
@@ -32,14 +41,36 @@ function ContactForm() {
     return errs
   }
 
-  const onSubmit = (e: React.FormEvent) => {
+  const resetForm = () => {
+    setName('')
+    setEmail('')
+    setMessage('')
+    form.current?.reset()
+  }
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (status === 'sending') return
     const errs = validate()
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
-    const subject = encodeURIComponent(`Portfolio contact from ${name}`)
-    const body = encodeURIComponent(`Name: ${name}\nEmail: ${email}\n\n${message}`)
-    window.location.href = `${site.mailto}?subject=${subject}&body=${body}`
+
+    setStatus('sending')
+    const formEl = form.current
+    if (!formEl) {
+      setStatus('error')
+      return
+    }
+    try {
+      await emailjs.sendForm(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, formEl, {
+        publicKey: EMAILJS_PUBLIC_KEY,
+      })
+      setStatus('success')
+      resetForm()
+    } catch (error) {
+      console.error('EmailJS send failed:', error)
+      setStatus('error')
+    }
   }
 
   const fieldClass = (hasError: boolean) =>
@@ -50,7 +81,13 @@ function ContactForm() {
     }`
 
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-5">
+    <form ref={form} onSubmit={onSubmit} noValidate className="space-y-5">
+      <input
+        type="hidden"
+        name="subject"
+        value={`Portfolio contact from ${name}`}
+        aria-hidden="true"
+      />
       <div className="grid gap-5 sm:grid-cols-2">
         <div>
           <label htmlFor="cf-name" className="mb-2 block font-mono text-[10px] tracking-[0.25em] text-sub uppercase">
@@ -58,6 +95,7 @@ function ContactForm() {
           </label>
           <input
             id="cf-name"
+            name="user_name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -73,6 +111,7 @@ function ContactForm() {
           </label>
           <input
             id="cf-email"
+            name="user_email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -90,6 +129,7 @@ function ContactForm() {
         </label>
         <textarea
           id="cf-message"
+          name="message"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={5}
@@ -100,12 +140,41 @@ function ContactForm() {
         {errors.message && <p className="mt-1.5 text-xs text-red-400">{errors.message}</p>}
       </div>
 
-      <button type="submit" className="btn btn-primary w-full sm:w-auto">
+      {status !== 'idle' && (
+        <p
+          aria-live="polite"
+          className={`font-mono text-[10px] tracking-[0.2em] uppercase ${
+            status === 'success'
+              ? 'text-emerald-400'
+              : status === 'error'
+                ? 'text-red-400'
+                : 'text-dim'
+          }`}
+        >
+          {status === 'sending'
+            ? 'Sending your message...'
+            : status === 'success'
+              ? "Message sent successfully! I'll get back to you soon."
+              : 'Something went wrong. Please try again.'}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        className="btn btn-primary w-full sm:w-auto disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={status === 'sending'}
+      >
         <span className="btn-shine" aria-hidden="true" />
-        Send message <span aria-hidden="true">→</span>
+        {status === 'sending' ? (
+          'Sending...'
+        ) : (
+          <>
+            Send message <span aria-hidden="true">→</span>
+          </>
+        )}
       </button>
       <p className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">
-        Frontend validation only — sends via your email client. No data is stored.
+        Frontend only — delivered via EmailJS. No data is stored.
       </p>
     </form>
   )
